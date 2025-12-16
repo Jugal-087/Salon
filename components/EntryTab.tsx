@@ -268,7 +268,7 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                 </div>
              ) : (
                 <div className="flex items-center justify-between text-teal-600 bg-teal-50 px-3 py-2 rounded-lg text-sm">
-                    <span className="flex items-center gap-2"><Crown size={14}/> VIP Savings (20% on >₹100)</span>
+                    <span className="flex items-center gap-2"><Crown size={14}/> VIP Savings (20% off)</span>
                     <span className="font-bold">-{formatCurrency(calculation.finalDiscountAmount)}</span>
                 </div>
              )}
