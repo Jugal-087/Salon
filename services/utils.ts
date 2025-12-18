@@ -52,11 +52,40 @@ export const formatCurrency = (amount: number) => {
 
 export const formatDateDisplay = (dateStr: string) => {
   if (!dateStr) return '';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-GB'); // DD/MM/YYYY
+  const [y, m, d] = dateStr.split('-');
+  return `${d}-${m}-${y}`; // Format: dd-mm-yyyy strictly from components to avoid timezone shifts
 };
 
-export const getTodayISO = () => new Date().toISOString().split('T')[0];
+export const getTodayISO = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+// Helper for Cycle Range: 25th of last month to 24th of this month
+export const getCycleBounds = (isoMonth: string) => {
+    const [year, month] = isoMonth.split('-').map(Number);
+    
+    // JS Date month is 0-indexed.
+    // Start: 25th of previous month
+    const startObj = new Date(year, month - 2, 25);
+    // End: 24th of current month
+    const endObj = new Date(year, month - 1, 24);
+
+    const format = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
+
+    return {
+        start: format(startObj),
+        end: format(endObj)
+    };
+};
 
 // --- Calculations ---
 
@@ -117,18 +146,43 @@ export const parseJSON = async (file: File): Promise<any> => {
   });
 };
 
+export const parseExcelDate = (val: any): string => {
+    if (!val) return getTodayISO();
+
+    if (typeof val === 'number') {
+        const utc_days  = Math.floor(val - 25569);
+        const utc_value = utc_days * 86400;
+        const date_info = new Date(utc_value * 1000);
+        return date_info.toISOString().split('T')[0];
+    }
+
+    if (typeof val === 'string') {
+        const parts = val.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+        if (parts) {
+            const d = parts[1].padStart(2, '0');
+            const m = parts[2].padStart(2, '0');
+            const y = parts[3];
+            return `${y}-${m}-${d}`;
+        }
+        
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    }
+
+    return getTodayISO();
+};
+
 // --- Migration / Import Helper ---
 export const batchImportEntries = async (entries: Entry[]) => {
   const batch = writeBatch(db);
   const entriesRef = collection(db, COLLECTIONS.ENTRIES);
   
-  // Process in chunks of 500 (Firestore limit)
   for (let i = 0; i < entries.length; i += 400) {
     const chunk = entries.slice(i, i + 400);
     const chunkBatch = writeBatch(db);
     chunk.forEach(entry => {
-      const docRef = doc(entriesRef); // Auto ID
-      const { id, ...data } = entry; // Remove legacy numeric ID, use Firestore ID
+      const docRef = doc(entriesRef);
+      const { id, ...data } = entry;
       chunkBatch.set(docRef, { 
         ...data, 
         timestamp: new Date(entry.datetime).getTime(),

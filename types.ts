@@ -1,6 +1,8 @@
+
 export interface Service {
   name: string;
   amount: number;
+  category: 'Men' | 'Women';
 }
 
 export interface Staff {
@@ -12,11 +14,13 @@ export interface VIPMember {
   name: string;
   date: string; // YYYY-MM-DD
   staff: string;
+  synced?: boolean; // Indicates if data is synced to cloud
 }
 
 export interface ServiceItem {
   name: string;
   amount: number;
+  category?: 'Men' | 'Women';
 }
 
 export interface Entry {
@@ -31,6 +35,8 @@ export interface Entry {
   discount: number;
   paid: number;
   memberStatus: 'active' | 'expired' | 'normal';
+  paymentMethod?: string; // Cash, Card, UPI
+  synced?: boolean; // Indicates if data is synced to cloud
 }
 
 export type TabType = 'entry' | 'membership' | 'services' | 'staff' | 'reports';

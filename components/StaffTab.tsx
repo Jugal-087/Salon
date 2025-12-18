@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Trash2, UserPlus, ShieldAlert } from 'lucide-react';
+import { Trash2, UserPlus, ShieldAlert, Calendar } from 'lucide-react';
 import { Button, Input, Card, Modal } from './UI';
 import { Entry, VIPMember, STAFF_DELETE_PASSWORD } from '../types';
-import { formatCurrency } from '../services/utils';
+import { formatCurrency, getTodayISO, getCycleBounds, formatDateDisplay } from '../services/utils';
 
 interface StaffTabProps {
   staff: string[];
@@ -16,6 +16,9 @@ export const StaffTab: React.FC<StaffTabProps> = ({ staff, entries, vips, onUpda
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [staffToDelete, setStaffToDelete] = useState<string | null>(null);
   const [password, setPassword] = useState('');
+
+  // Use current cycle for staff stats
+  const currentCycle = getCycleBounds(getTodayISO().substring(0, 7));
 
   const handleAdd = () => {
     if (newStaff && !staff.includes(newStaff)) {
@@ -40,21 +43,13 @@ export const StaffTab: React.FC<StaffTabProps> = ({ staff, entries, vips, onUpda
     }
   };
 
-  // Helper to calculate monthly stats
   const getStats = (staffName: string) => {
-    const now = new Date();
-    // Logic from original: 25th prev month to 24th curr month
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const startDate = new Date(currentYear, currentMonth - 1, 25);
-    const endDate = new Date(currentYear, currentMonth, 24, 23, 59, 59);
-
     const periodRevenue = entries
-      .filter(e => e.staff === staffName && new Date(e.date) >= startDate && new Date(e.date) <= endDate)
+      .filter(e => e.staff === staffName && e.date >= currentCycle.start && e.date <= currentCycle.end)
       .reduce((sum, e) => sum + (e.paid || 0), 0);
 
     const periodMemberships = vips
-        .filter(v => v.staff === staffName && new Date(v.date) >= startDate && new Date(v.date) <= endDate)
+        .filter(v => v.staff === staffName && v.date >= currentCycle.start && v.date <= currentCycle.end)
         .length;
 
     return { revenue: periodRevenue, memberships: periodMemberships };
@@ -75,13 +70,22 @@ export const StaffTab: React.FC<StaffTabProps> = ({ staff, entries, vips, onUpda
             </Button>
         </div>
 
+        <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-2 text-slate-600 text-sm font-medium">
+                <Calendar size={16} />
+                <span>Current Billing Cycle Stats:</span>
+                <span className="font-bold text-slate-800">{formatDateDisplay(currentCycle.start)} to {formatDateDisplay(currentCycle.end)}</span>
+            </div>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">(25th - 24th inclusive)</p>
+        </div>
+
         <div className="overflow-hidden rounded-xl border border-slate-200">
             <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-slate-700 font-semibold">
                     <tr>
                         <th className="p-4">Name</th>
-                        <th className="p-4">New Memberships (This Month)</th>
-                        <th className="p-4">Revenue (This Month)</th>
+                        <th className="p-4">Cycle Memberships</th>
+                        <th className="p-4">Cycle Revenue</th>
                         <th className="p-4 text-right">Actions</th>
                     </tr>
                 </thead>

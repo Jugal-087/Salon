@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Users, Scissors, Contact, FileBarChart } from 'lucide-react';
 import { collection, onSnapshot, query, orderBy, doc, setDoc, addDoc, deleteDoc } from 'firebase/firestore';
@@ -39,8 +40,14 @@ function App() {
         if (doc.exists()) {
             setServices(doc.data().list || []);
         } else {
-            // Initialize defaults if not exists
-            setDoc(doc.ref, { list: [{ name: 'Haircut', amount: 300 }, { name: 'Shave', amount: 150 }] });
+            // Initialize defaults with categories
+            setDoc(doc.ref, { 
+              list: [
+                { name: 'Men\'s Haircut', amount: 300, category: 'Men' }, 
+                { name: 'Men\'s Shave', amount: 150, category: 'Men' },
+                { name: 'Woman\'s Styling', amount: 800, category: 'Women' }
+              ] 
+            });
         }
     }, (error) => {
       console.error("Services sync error:", error);
@@ -59,10 +66,12 @@ function App() {
 
     // 3. Subscribe to VIPs
     const vipQuery = query(collection(db, COLLECTIONS.VIP));
-    const unsubVIP = onSnapshot(vipQuery, (snapshot) => {
+    const unsubVIP = onSnapshot(vipQuery, { includeMetadataChanges: true }, (snapshot) => {
         const vipList: VIPMember[] = [];
         snapshot.forEach((doc) => {
-            vipList.push(doc.data() as VIPMember);
+            const data = doc.data() as VIPMember;
+            const synced = !doc.metadata.hasPendingWrites;
+            vipList.push({ ...data, synced });
         });
         setVips(vipList);
     }, (error) => {
@@ -71,10 +80,12 @@ function App() {
 
     // 4. Subscribe to Entries
     const entriesQuery = query(collection(db, COLLECTIONS.ENTRIES), orderBy('timestamp', 'desc'));
-    const unsubEntries = onSnapshot(entriesQuery, (snapshot) => {
+    const unsubEntries = onSnapshot(entriesQuery, { includeMetadataChanges: true }, (snapshot) => {
         const entriesList: Entry[] = [];
         snapshot.forEach((doc) => {
-            entriesList.push({ id: doc.id, ...doc.data() } as Entry);
+            const data = doc.data();
+            const synced = !doc.metadata.hasPendingWrites;
+            entriesList.push({ id: doc.id, ...data, synced } as Entry);
         });
         setEntries(entriesList);
     }, (error) => {
@@ -98,14 +109,8 @@ function App() {
     await setDoc(doc(db, COLLECTIONS.METADATA, 'staff'), { list: newStaff });
   };
 
-  const updateVips = async (newVips: VIPMember[]) => {
-    for (const vip of newVips) {
-        await setDoc(doc(db, COLLECTIONS.VIP, vip.phone), vip);
-    }
-  };
-
   const addEntry = async (entry: Entry) => {
-    const { id, ...data } = entry; // Drop local ID
+    const { id, synced, ...data } = entry; 
     await addDoc(collection(db, COLLECTIONS.ENTRIES), {
         ...data,
         timestamp: Date.now()
@@ -117,7 +122,8 @@ function App() {
   };
 
   const handleAddVIP = async (vip: VIPMember) => {
-    await setDoc(doc(db, COLLECTIONS.VIP, vip.phone), vip);
+    const { phone, name, date, staff } = vip;
+    await setDoc(doc(db, COLLECTIONS.VIP, phone), { phone, name, date, staff });
   };
   
   const handleDeleteVIP = async (phone: string) => {
@@ -126,7 +132,8 @@ function App() {
 
   const handleVIPListUpdate = (latestVips: VIPMember[]) => {
       latestVips.forEach(v => {
-          setDoc(doc(db, COLLECTIONS.VIP, v.phone), v);
+          const { phone, name, date, staff } = v;
+          setDoc(doc(db, COLLECTIONS.VIP, phone), { phone, name, date, staff });
       });
   };
 
@@ -140,7 +147,6 @@ function App() {
 
   return (
     <div className="min-h-screen pb-20">
-        {/* Header */}
         <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm no-print">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-gradient-to-br from-sky-500 to-teal-400 rounded-lg flex items-center justify-center text-white font-bold text-lg">S</div>
@@ -157,7 +163,6 @@ function App() {
         </header>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-            {/* Navigation Tabs */}
             <div className="flex flex-wrap gap-2 mb-8 no-print">
                 {navItems.map((item) => {
                     const Icon = item.icon;
@@ -179,7 +184,6 @@ function App() {
                 })}
             </div>
 
-            {/* Content Area */}
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
                 {activeTab === 'entry' && (
                     <EntryTab 
@@ -203,21 +207,18 @@ function App() {
                     />
                 )}
                 {activeTab === 'membership' && (
-                    /* Injecting custom props to handle the Firestore mismatch with original design */
                     <MembershipTab 
                         vips={vips} 
                         staff={staff} 
                         onUpdate={(updatedList) => {
-                            // Detect deletion by length comparison logic is flawed here.
-                            // We will use a hacked prop in MembershipTab to call delete directly.
                             handleVIPListUpdate(updatedList);
                         }}
-                        /* @ts-ignore: Passing extra props for cleaner Firestore integration */
+                        /* @ts-ignore */
                         onDeleteVIP={handleDeleteVIP}
                     />
                 )}
                 {activeTab === 'reports' && (
-                    <ReportsTab entries={entries} onDeleteEntry={deleteEntry} />
+                    <ReportsTab entries={entries} vips={vips} onDeleteEntry={deleteEntry} />
                 )}
             </div>
         </main>
