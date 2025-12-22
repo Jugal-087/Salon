@@ -74,24 +74,34 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  size?: 'md' | 'lg' | 'xl' | '4xl' | '7xl';
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer }) => {
+export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer, size = 'md' }) => {
   if (!isOpen) return null;
+
+  const sizeClasses = {
+    md: 'max-w-md',
+    lg: 'max-w-lg',
+    xl: 'max-w-xl',
+    '4xl': 'max-w-4xl',
+    '7xl': 'max-w-7xl',
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex justify-between items-center p-5 border-b border-slate-100">
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${sizeClasses[size]} animate-in fade-in zoom-in-95 duration-200 overflow-hidden`}>
+        <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-white">
           <h3 className="text-lg font-bold text-slate-800">{title}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-lg transition-colors">
             <X size={20} />
           </button>
         </div>
-        <div className="p-5">
+        <div className="p-5 overflow-y-auto max-h-[85vh]">
           {children}
         </div>
         {footer && (
-          <div className="p-5 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex justify-end gap-3">
+          <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
             {footer}
           </div>
         )}

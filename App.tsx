@@ -1,14 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Users, Scissors, Contact, FileBarChart } from 'lucide-react';
+import { LayoutDashboard, Users, Scissors, Contact, FileBarChart, Settings2 } from 'lucide-react';
 import { collection, onSnapshot, query, orderBy, doc, setDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import { EntryTab } from './components/EntryTab';
 import { ServicesTab } from './components/ServicesTab';
 import { StaffTab } from './components/StaffTab';
+import { StaffPerformanceTab } from './components/StaffPerformanceTab';
 import { MembershipTab } from './components/MembershipTab';
 import { ReportsTab } from './components/ReportsTab';
 import { Button } from './components/UI';
-import { db, COLLECTIONS } from './services/utils';
+import { db, COLLECTIONS, getTodayISO } from './services/utils';
 import { Service, Staff, VIPMember, Entry, TabType } from './types';
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
   const [staff, setStaff] = useState<string[]>([]);
   const [vips, setVips] = useState<VIPMember[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [counterCash, setCounterCash] = useState<number>(0);
 
   // Network Status
   useEffect(() => {
@@ -92,11 +94,22 @@ function App() {
       console.error("Entries sync error:", error);
     });
 
+    // 5. Subscribe to Daily Stats (Counter Cash)
+    const today = getTodayISO();
+    const unsubDailyStats = onSnapshot(doc(db, 'dailyStats', today), (doc) => {
+        if (doc.exists()) {
+            setCounterCash(doc.data().counterCash || 0);
+        } else {
+            setCounterCash(0);
+        }
+    });
+
     return () => {
         unsubServices();
         unsubStaff();
         unsubVIP();
         unsubEntries();
+        unsubDailyStats();
     };
   }, []);
 
@@ -111,8 +124,11 @@ function App() {
 
   const addEntry = async (entry: Entry) => {
     const { id, synced, ...data } = entry; 
+    // Ensuring paid amount is rounded to next number if it has decimals
+    const roundedPaid = Math.ceil(data.paid);
     await addDoc(collection(db, COLLECTIONS.ENTRIES), {
         ...data,
+        paid: roundedPaid,
         timestamp: Date.now()
     });
   };
@@ -137,12 +153,17 @@ function App() {
       });
   };
 
+  const updateCounterCash = async (val: number) => {
+    const today = getTodayISO();
+    await setDoc(doc(db, 'dailyStats', today), { counterCash: val }, { merge: true });
+  };
+
   const navItems = [
     { id: 'entry', label: 'Data Entry', icon: LayoutDashboard },
     { id: 'membership', label: 'Membership', icon: Users },
-    { id: 'services', label: 'Services', icon: Scissors },
-    { id: 'staff', label: 'Staff', icon: Contact },
     { id: 'reports', label: 'Reports', icon: FileBarChart },
+    { id: 'staff', label: 'Staff', icon: Contact },
+    { id: 'meta', label: 'Meta', icon: Settings2 },
   ];
 
   return (
@@ -193,17 +214,27 @@ function App() {
                         entries={entries}
                         onSave={addEntry}
                         onAddVIP={handleAddVIP}
+                        counterCash={counterCash}
+                        onUpdateCounterCash={updateCounterCash}
                     />
                 )}
-                {activeTab === 'services' && (
-                    <ServicesTab services={services} onUpdate={updateServices} />
+                {activeTab === 'reports' && (
+                    <ReportsTab entries={entries} vips={vips} onDeleteEntry={deleteEntry} />
                 )}
                 {activeTab === 'staff' && (
+                    <StaffPerformanceTab 
+                        staff={staff} 
+                        entries={entries} 
+                    />
+                )}
+                {activeTab === 'meta' && (
                     <StaffTab 
                         staff={staff} 
                         entries={entries} 
                         vips={vips}
-                        onUpdate={updateStaff} 
+                        onUpdate={updateStaff}
+                        services={services}
+                        onUpdateServices={updateServices}
                     />
                 )}
                 {activeTab === 'membership' && (
@@ -216,9 +247,6 @@ function App() {
                         /* @ts-ignore */
                         onDeleteVIP={handleDeleteVIP}
                     />
-                )}
-                {activeTab === 'reports' && (
-                    <ReportsTab entries={entries} vips={vips} onDeleteEntry={deleteEntry} />
                 )}
             </div>
         </main>

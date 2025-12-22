@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
-import { Trash2, Printer, Download, UploadCloud, FileSpreadsheet, FileJson, Users, CreditCard, Scissors, Calendar, User, UserRoundSearch } from 'lucide-react';
+import { Trash2, Printer, Download, UploadCloud, FileSpreadsheet, FileJson, Users, CreditCard, Scissors, Calendar, User, UserRoundSearch, TrendingUp, BarChart3 } from 'lucide-react';
 import { Button, Input, Card, Modal } from './UI';
 import { Entry, VIPMember } from '../types';
-import { exportToExcel, formatCurrency, getTodayISO, formatDateDisplay, parseJSON, parseExcel, parseExcelDate, batchImportEntries, getCycleBounds } from '../services/utils';
+import { exportToExcel, formatCurrency, getTodayISO, formatDateDisplay, parseJSON, parseExcel, parseExcelDate, batchImportEntries, getMonthlyBounds } from '../services/utils';
 
 interface ReportsTabProps {
   entries: Entry[];
@@ -12,50 +12,62 @@ interface ReportsTabProps {
 }
 
 export const ReportsTab: React.FC<ReportsTabProps> = ({ entries, vips, onDeleteEntry }) => {
-  const [selectedMonth, setSelectedMonth] = useState(getTodayISO().substring(0, 7));
+  // Date selector, default to today
+  const [selectedDate, setSelectedDate] = useState(getTodayISO());
   const [isImporting, setIsImporting] = useState(false);
-  const [isDailyModalOpen, setIsDailyModalOpen] = useState(false);
-  const [selectedDailyDate, setSelectedDailyDate] = useState(getTodayISO());
-  const [printMode, setPrintMode] = useState<'monthly' | 'daily'>('monthly');
+  
+  // Get YYYY-MM for monthly calculation base
+  const selectedMonthStr = useMemo(() => selectedDate.substring(0, 7), [selectedDate]);
+  
+  // Define the business monthly bounds (25th of prev month to 24th of current)
+  const monthlyBounds = useMemo(() => getMonthlyBounds(selectedMonthStr), [selectedMonthStr]);
 
-  // Cycle Range: 25th of last month to 24th of this month
-  const cycleRange = useMemo(() => {
-    const { start, end } = getCycleBounds(selectedMonth);
-    return {
-      start,
-      end,
-      startLabel: formatDateDisplay(start),
-      endLabel: formatDateDisplay(end)
-    };
-  }, [selectedMonth]);
-
-  // Filter entries within [start, end] inclusive
+  // Filter entries for the specific selected date and sort chronologically (oldest to newest, so latest is bottom)
   const filteredEntries = useMemo(() => {
-    return entries.filter(e => e.date >= cycleRange.start && e.date <= cycleRange.end);
-  }, [entries, cycleRange]);
+    return entries
+      .filter(e => e.date === selectedDate)
+      .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+  }, [entries, selectedDate]);
 
-  const filteredDailyEntries = useMemo(() => {
-    return entries.filter(e => e.date === selectedDailyDate);
-  }, [entries, selectedDailyDate]);
+  // Daily Stats with rounding
+  const dailyServiceRevenue = useMemo(() => {
+    return filteredEntries.reduce((sum, e) => {
+      const hasFee = e.services.some(s => s.name === 'VIP Membership Fee');
+      const srvPart = Math.ceil(e.paid - (hasFee ? 200 : 0));
+      return sum + srvPart;
+    }, 0);
+  }, [filteredEntries]);
 
-  const newMemberships = useMemo(() => {
-    return vips.filter(v => v.date >= cycleRange.start && v.date <= cycleRange.end);
-  }, [vips, cycleRange]);
+  const dailyMembershipsCount = useMemo(() => {
+    return vips.filter(v => v.date === selectedDate).length;
+  }, [vips, selectedDate]);
 
-  const totalRevenue = useMemo(() => filteredEntries.reduce((sum, e) => sum + e.paid, 0), [filteredEntries]);
-  const membershipRevenue = useMemo(() => newMemberships.length * 200, [newMemberships]);
-  const serviceRevenue = useMemo(() => totalRevenue - membershipRevenue, [totalRevenue, membershipRevenue]);
-  const dailyRevenue = useMemo(() => filteredDailyEntries.reduce((sum, e) => sum + e.paid, 0), [filteredDailyEntries]);
+  // Monthly Business Stats (25th to 24th)
+  const monthlyPeriodEntries = useMemo(() => {
+    return entries.filter(e => e.date >= monthlyBounds.start && e.date <= monthlyBounds.end);
+  }, [entries, monthlyBounds]);
 
-  const handlePrintMonthly = () => {
-    setPrintMode('monthly');
-    setTimeout(() => { window.print(); }, 100);
-  };
+  const monthlyVipsCount = useMemo(() => {
+    return vips.filter(v => v.date >= monthlyBounds.start && v.date <= monthlyBounds.end).length;
+  }, [vips, monthlyBounds]);
 
-  const handlePrintDailyAction = () => {
-    setPrintMode('daily');
-    setIsDailyModalOpen(false);
-    setTimeout(() => { window.print(); }, 100);
+  const monthlyServiceRevenue = useMemo(() => {
+    return monthlyPeriodEntries.reduce((sum, e) => {
+      const hasFee = e.services.some(s => s.name === 'VIP Membership Fee');
+      const srvPart = Math.ceil(e.paid - (hasFee ? 200 : 0));
+      return sum + srvPart;
+    }, 0);
+  }, [monthlyPeriodEntries]);
+
+  const monthlyMembershipFeeTotal = useMemo(() => {
+    return monthlyPeriodEntries.reduce((sum, e) => {
+      const hasFee = e.services.some(s => s.name === 'VIP Membership Fee');
+      return sum + (hasFee ? 200 : 0);
+    }, 0);
+  }, [monthlyPeriodEntries]);
+
+  const handlePrint = () => {
+    window.print();
   };
 
   const handleDelete = (id: string | number) => {
@@ -99,7 +111,8 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ entries, vips, onDeleteE
                     return undefined;
                 };
                 const dateStr = parseExcelDate(get(['Date', 'date', 'datetime']));
-                const paidAmount = Number(get(['Paid', 'Amount', 'paid', 'amount']) || 0);
+                const paidAmountRaw = Number(get(['Paid', 'Amount', 'paid', 'amount']) || 0);
+                const paidAmount = Math.ceil(paidAmountRaw); // Properly round UP on import
                 const totalAmount = Number(get(['Total', 'total']) || paidAmount);
                 const serviceStr = String(get(['Services', 'Service', 'services']) || 'Imported Service');
                 const status = String(get(['Member Status', 'Status', 'member status', 'status']) || 'normal').toLowerCase();
@@ -113,7 +126,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ entries, vips, onDeleteE
                     phone: String(get(['Phone', 'phone', 'Mobile']) || ''),
                     name: String(get(['Name', 'Client', 'name', 'client', 'Customer']) || 'Unknown'),
                     staff: String(get(['Staff', 'staff']) || 'Admin'),
-                    services: [{ name: serviceStr, amount: totalAmount, category: 'Men' }], // Import defaults to Men
+                    services: [{ name: serviceStr, amount: totalAmount, category: 'Men' }],
                     total: totalAmount,
                     discount: Number(get(['Discount', 'discount']) || 0),
                     paid: paidAmount,
@@ -139,95 +152,95 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ entries, vips, onDeleteE
     }
   };
 
-  const monthLabel = useMemo(() => {
-    const [year, month] = selectedMonth.split('-');
-    const date = new Date(parseInt(year), parseInt(month) - 1);
-    return date.toLocaleString('default', { month: 'long', year: 'numeric' });
-  }, [selectedMonth]);
-
   const ReportTable = ({ title, data, total, subtitle, rangeLabel }: { title: string, data: Entry[], total: number, subtitle?: string, rangeLabel?: string }) => (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden print:shadow-none print:border-0">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden print:shadow-none print:border-slate-300 print:rounded-none">
+        <div className="p-6 print:p-2 border-b border-slate-100 print:border-slate-300 flex justify-between items-center bg-slate-50/50 print:bg-white">
             <div className="flex flex-col">
-                <h2 className="text-xl font-bold text-slate-800">{title}</h2>
-                {rangeLabel && (
-                    <div className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold uppercase tracking-tight">
-                        <Calendar size={10} /> Cycle: {rangeLabel}
-                    </div>
-                )}
-                {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
+                <h2 className="text-xl print:text-sm font-bold text-slate-800">{title}</h2>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                    {rangeLabel && (
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-slate-200 print:bg-slate-100 text-slate-700 rounded text-[10px] print:text-[8px] font-bold uppercase tracking-tight">
+                            <Calendar size={10} className="print:w-2 print:h-2" /> {rangeLabel}
+                        </div>
+                    )}
+                    {subtitle && <p className="text-xs print:text-[8px] text-slate-500">{subtitle}</p>}
+                </div>
             </div>
             <div className="text-right">
-                <div className="text-xs text-slate-400 font-semibold uppercase tracking-widest">Grand Total</div>
-                <div className="text-2xl font-black text-teal-600">{formatCurrency(total)}</div>
+                <div className="text-xs print:text-[8px] text-slate-400 font-semibold uppercase tracking-widest">Service Revenue</div>
+                <div className="text-2xl print:text-lg font-black text-teal-600">{formatCurrency(total)}</div>
             </div>
         </div>
         
         <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+            <table className="w-full text-left text-sm print:text-[8pt]">
+                <thead className="bg-slate-50 print:bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 print:border-slate-300">
                     <tr>
-                        <th className="p-4">Date & Time</th>
-                        <th className="p-4">Client</th>
-                        <th className="p-4">Services</th>
-                        <th className="p-4">Staff</th>
-                        <th className="p-4">Method</th>
-                        <th className="p-4 text-right">Discount</th>
-                        <th className="p-4 text-right">Paid</th>
+                        <th className="p-4 print:p-1.5">Time</th>
+                        <th className="p-4 print:p-1.5">Client</th>
+                        <th className="p-4 print:p-1.5">Services</th>
+                        <th className="p-4 print:p-1.5">Staff</th>
+                        <th className="p-4 print:p-1.5">Mode</th>
+                        <th className="p-4 print:p-1.5 text-right">Disc</th>
+                        <th className="p-4 print:p-1.5 text-right">Service Paid</th>
                         <th className="p-4 text-center no-print">Action</th>
                     </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                    {data.map(e => (
-                        <tr key={e.id} className={`hover:bg-slate-50/50 transition-colors ${e.services.some(s => s.name === 'VIP Membership Fee') ? 'bg-sky-50/30' : ''}`}>
-                            <td className="p-4 text-slate-500">
-                                <div className="font-medium text-slate-700">{formatDateDisplay(e.date)}</div>
-                                <div className="text-xs">{new Date(e.datetime).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}</div>
-                            </td>
-                            <td className="p-4 font-medium">
-                                {e.name} <br/>
-                                <span className="text-xs text-slate-400">{e.phone}</span>
-                                {e.memberStatus === 'active' && <span className="ml-2 text-[10px] text-teal-600 font-bold border border-teal-200 px-1 rounded">VIP</span>}
-                            </td>
-                            <td className="p-4 text-slate-600">
-                                <div className="flex flex-col gap-1">
-                                    {e.services.map((s, idx) => (
-                                        <div key={idx} className="flex items-center gap-1.5">
-                                            {s.name === 'VIP Membership Fee' ? (
-                                                <Users size={12} className="text-sky-500" />
-                                            ) : s.category === 'Women' ? (
-                                                <UserRoundSearch size={10} className="text-rose-400" />
-                                            ) : (
-                                                <User size={10} className="text-sky-400" />
-                                            )}
-                                            <span className="text-xs">{s.name}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </td>
-                            <td className="p-4 text-slate-600">{e.staff}</td>
-                            <td className="p-4 text-slate-600 text-xs">
-                                <span className="px-2 py-1 bg-slate-100 rounded-md border border-slate-200">
-                                    {e.paymentMethod || 'Cash'}
-                                </span>
-                            </td>
-                            <td className="p-4 text-right text-slate-500">{e.discount > 0 ? `${e.discount}%` : '-'}</td>
-                            <td className="p-4 text-right font-bold text-slate-800">{formatCurrency(e.paid)}</td>
-                            <td className="p-4 text-center no-print">
-                                <button onClick={() => handleDelete(e.id)} className="text-slate-300 hover:text-red-500 transition-colors p-2">
-                                    <Trash2 size={16} />
-                                </button>
-                            </td>
-                        </tr>
-                    ))}
+                <tbody className="divide-y divide-slate-100 print:divide-slate-200">
+                    {data.map(e => {
+                        const hasFee = e.services.some(s => s.name === 'VIP Membership Fee');
+                        const srvPaid = Math.ceil(e.paid - (hasFee ? 200 : 0));
+                        
+                        return (
+                            <tr key={e.id} className={`hover:bg-slate-50/50 transition-colors ${hasFee ? 'bg-sky-50/30' : ''}`}>
+                                <td className="p-4 print:p-1.5 text-slate-500 print:text-slate-700">
+                                    <div className="font-bold">{new Date(e.datetime).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}</div>
+                                    <div className="text-xs print:text-[7pt] text-slate-400">{formatDateDisplay(e.date)}</div>
+                                </td>
+                                <td className="p-4 print:p-1.5 font-medium">
+                                    {e.name}
+                                    <div className="text-xs print:text-[7pt] text-slate-400 font-normal">{e.phone}</div>
+                                </td>
+                                <td className="p-4 print:p-1.5 text-slate-600">
+                                    <div className="flex flex-col gap-0.5 print:flex-row print:flex-wrap print:gap-1">
+                                        {e.services.map((s, idx) => (
+                                            <div key={idx} className="flex items-center gap-1 print:gap-0.5">
+                                                {s.name === 'VIP Membership Fee' ? (
+                                                    <Users size={12} className="text-sky-500 print:w-2 print:h-2" />
+                                                ) : s.category === 'Women' ? (
+                                                    <UserRoundSearch size={10} className="text-rose-400 print:w-2 print:h-2" />
+                                                ) : (
+                                                    <User size={10} className="text-sky-400 print:w-2 print:h-2" />
+                                                )}
+                                                <span className="text-xs print:text-[7pt]">{s.name}{idx < e.services.length - 1 ? <span className="hidden print:inline">,</span> : ''}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </td>
+                                <td className="p-4 print:p-1.5 text-slate-600">{e.staff}</td>
+                                <td className="p-4 print:p-1.5 text-slate-600 text-xs print:text-[7pt]">
+                                    <span className="px-2 py-1 bg-slate-100 rounded-md border border-slate-200 print:border-none print:bg-transparent print:p-0">
+                                        {e.paymentMethod || 'Cash'}
+                                    </span>
+                                </td>
+                                <td className="p-4 print:p-1.5 text-right text-slate-500">{e.discount > 0 ? `${e.discount}%` : '-'}</td>
+                                <td className="p-4 print:p-1.5 text-right font-bold text-slate-800">{formatCurrency(srvPaid)}</td>
+                                <td className="p-4 text-center no-print">
+                                    <button onClick={() => handleDelete(e.id)} className="text-slate-300 hover:text-red-500 transition-colors p-2">
+                                        <Trash2 size={16} />
+                                    </button>
+                                </td>
+                            </tr>
+                        );
+                    })}
                     {data.length === 0 && (
-                        <tr><td colSpan={8} className="p-12 text-center text-slate-400">No transactions found for this period.</td></tr>
+                        <tr><td colSpan={8} className="p-12 text-center text-slate-400">No transactions found for this day.</td></tr>
                     )}
                 </tbody>
-                <tfoot className="bg-slate-50 font-bold text-slate-800 border-t border-slate-200">
+                <tfoot className="bg-slate-50 print:bg-white font-bold text-slate-800 border-t border-slate-200 print:border-slate-300">
                     <tr>
-                        <td colSpan={6} className="p-4 text-right">Cycle Total</td>
-                        <td className="p-4 text-right text-teal-700 text-lg">{formatCurrency(total)}</td>
+                        <td colSpan={6} className="p-4 print:p-1.5 text-right uppercase tracking-widest text-[10px]">Service Revenue Total</td>
+                        <td className="p-4 print:p-1.5 text-right text-teal-700 text-lg print:text-sm">{formatCurrency(total)}</td>
                         <td className="no-print"></td>
                     </tr>
                 </tfoot>
@@ -239,53 +252,67 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ entries, vips, onDeleteE
   return (
     <div className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print">
-            <Card title="Report Controls" className="h-fit">
-                <div className="space-y-4">
+            <Card title="Financial Performance" className="h-fit">
+                <div className="space-y-6">
                     <div>
                         <Input 
-                            label="Target Month Cycle" 
-                            type="month" 
-                            value={selectedMonth} 
-                            onChange={e => setSelectedMonth(e.target.value)} 
+                            label="Filter by Date" 
+                            type="date" 
+                            value={selectedDate} 
+                            onChange={e => setSelectedDate(e.target.value)} 
                         />
-                        <p className="text-[10px] text-slate-400 mt-1 font-medium italic">
-                            Report covers: {cycleRange.startLabel} to {cycleRange.endLabel} (Inclusive)
-                        </p>
                     </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="p-4 bg-teal-50 rounded-xl border border-teal-100">
-                            <div className="flex items-center gap-2 mb-1">
-                                <CreditCard size={14} className="text-teal-600" />
-                                <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">Total Cycle Revenue</p>
+
+                    <div className="space-y-4">
+                        {/* Daily Summary */}
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                <Calendar size={12} /> Daily Stats ({formatDateDisplay(selectedDate)})
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="p-3 bg-teal-50 rounded-xl border border-teal-100">
+                                    <p className="text-[9px] font-bold text-teal-600 uppercase mb-1">Service Revenue</p>
+                                    <p className="text-base font-black text-teal-800">{formatCurrency(dailyServiceRevenue)}</p>
+                                </div>
+                                <div className="p-3 bg-sky-50 rounded-xl border border-sky-100">
+                                    <p className="text-[9px] font-bold text-sky-600 uppercase mb-1">New VIPs</p>
+                                    <p className="text-base font-black text-sky-800">{dailyMembershipsCount}</p>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                    <p className="text-[9px] font-bold text-slate-500 uppercase mb-1">Entries</p>
+                                    <p className="text-base font-black text-slate-800">{filteredEntries.length}</p>
+                                </div>
                             </div>
-                            <p className="text-lg font-bold text-teal-800">{formatCurrency(totalRevenue)}</p>
                         </div>
-                        <div className="p-4 bg-sky-50 rounded-xl border border-sky-100">
-                            <div className="flex items-center gap-2 mb-1">
-                                <Users size={14} className="text-sky-600" />
-                                <p className="text-[10px] font-bold text-sky-700 uppercase tracking-wider">Memberships ({newMemberships.length})</p>
+
+                        {/* Monthly Summary */}
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                <BarChart3 size={12} /> Monthly Stats ({formatDateDisplay(monthlyBounds.start)} to {formatDateDisplay(monthlyBounds.end)})
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="p-3 bg-slate-800 rounded-xl text-white">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Monthly Service Revenue</p>
+                                    <p className="text-lg font-black text-white">{formatCurrency(monthlyServiceRevenue)}</p>
+                                    <p className="text-[9px] text-slate-500 mt-1 italic">Excl. {formatCurrency(monthlyMembershipFeeTotal)} Membership Fees</p>
+                                </div>
+                                <div className="p-3 bg-white rounded-xl border-2 border-slate-100 flex items-center justify-between">
+                                    <div>
+                                        <p className="text-[9px] font-bold text-slate-500 uppercase mb-1">Monthly Memberships</p>
+                                        <p className="text-lg font-black text-slate-800">{monthlyVipsCount}</p>
+                                    </div>
+                                    <TrendingUp size={24} className="text-teal-500 opacity-20" />
+                                </div>
                             </div>
-                            <p className="text-lg font-bold text-sky-800">{formatCurrency(membershipRevenue)}</p>
-                        </div>
-                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                            <div className="flex items-center gap-2 mb-1">
-                                <Scissors size={14} className="text-slate-600" />
-                                <p className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Service Only</p>
-                            </div>
-                            <p className="text-lg font-bold text-slate-800">{formatCurrency(serviceRevenue)}</p>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <Button onClick={handlePrintMonthly} variant="secondary">
-                            <Printer size={18} className="mr-2" /> Print Cycle Report
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                        <Button onClick={handlePrint} variant="secondary" className="w-full">
+                            <Printer size={18} className="mr-2" /> Print Daily Report
                         </Button>
-                        <Button onClick={() => setIsDailyModalOpen(true)} variant="ghost" className="border-sky-500 text-sky-600">
-                            <Calendar size={18} className="mr-2" /> Print Daily Report
-                        </Button>
-                        <Button onClick={() => exportToExcel(filteredEntries, `Cycle_Report_${selectedMonth}`)} variant="ghost" className="sm:col-span-2">
-                            <Download size={18} className="mr-2" /> Export Excel (Cycle)
+                        <Button onClick={() => exportToExcel(filteredEntries, `Report_${selectedDate}`)} variant="ghost" className="w-full">
+                            <Download size={18} className="mr-2" /> Export Excel
                         </Button>
                     </div>
                 </div>
@@ -312,54 +339,15 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ entries, vips, onDeleteE
             </Card>
         </div>
 
-        <div className={printMode === 'daily' ? 'print:hidden' : ''}>
-            <ReportTable 
-                title={`Salon Cycle Report: ${monthLabel}`} 
-                rangeLabel={`${cycleRange.startLabel} to ${cycleRange.endLabel}`}
-                subtitle={`Summary: ${newMemberships.length} new memberships, ${filteredEntries.length} total entries`}
-                data={filteredEntries}
-                total={totalRevenue}
-            />
-        </div>
-
-        <div className={`hidden print:block ${printMode === 'monthly' ? 'print:hidden' : ''}`}>
+        <div>
             <ReportTable 
                 title={`Daily Transaction Report`} 
-                rangeLabel={formatDateDisplay(selectedDailyDate)}
-                subtitle={`Generated on ${new Date().toLocaleString()}`}
-                data={filteredDailyEntries}
-                total={dailyRevenue}
+                rangeLabel={formatDateDisplay(selectedDate)}
+                subtitle={`Daily Summary: ${dailyMembershipsCount} memberships, ${filteredEntries.length} entries`}
+                data={filteredEntries}
+                total={dailyServiceRevenue}
             />
         </div>
-
-        <Modal
-            isOpen={isDailyModalOpen}
-            onClose={() => setIsDailyModalOpen(false)}
-            title="Select Date for Daily Report"
-            footer={
-                <>
-                    <Button variant="ghost" onClick={() => setIsDailyModalOpen(false)}>Cancel</Button>
-                    <Button onClick={handlePrintDailyAction}>
-                        <Printer size={18} className="mr-2" /> Print to PDF
-                    </Button>
-                </>
-            }
-        >
-            <div className="space-y-4">
-                <p className="text-sm text-slate-500">Choose a specific date to generate and print a one-day transaction report.</p>
-                <Input 
-                    label="Target Date" 
-                    type="date" 
-                    value={selectedDailyDate} 
-                    onChange={e => setSelectedDailyDate(e.target.value)}
-                    autoFocus
-                />
-                <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 flex justify-between items-center">
-                    <span className="text-sm font-medium text-sky-700">Estimated Transactions:</span>
-                    <span className="font-bold text-sky-800">{filteredDailyEntries.length}</span>
-                </div>
-            </div>
-        </Modal>
     </div>
   );
 };

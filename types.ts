@@ -39,6 +39,10 @@ export interface Entry {
   synced?: boolean; // Indicates if data is synced to cloud
 }
 
-export type TabType = 'entry' | 'membership' | 'services' | 'staff' | 'reports';
+export interface DailyStats {
+  counterCash: number;
+}
+
+export type TabType = 'entry' | 'membership' | 'services' | 'reports' | 'staff' | 'meta';
 
 export const STAFF_DELETE_PASSWORD = "Sonimona";

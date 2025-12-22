@@ -1,3 +1,4 @@
+
 import { utils, writeFile, read } from 'xlsx';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -64,8 +65,8 @@ export const getTodayISO = () => {
   return `${y}-${m}-${d}`;
 };
 
-// Helper for Cycle Range: 25th of last month to 24th of this month
-export const getCycleBounds = (isoMonth: string) => {
+// Helper for Monthly Range: 25th of last month to 24th of this month
+export const getMonthlyBounds = (isoMonth: string) => {
     const [year, month] = isoMonth.split('-').map(Number);
     
     // JS Date month is 0-indexed.
@@ -182,9 +183,12 @@ export const batchImportEntries = async (entries: Entry[]) => {
     const chunkBatch = writeBatch(db);
     chunk.forEach(entry => {
       const docRef = doc(entriesRef);
-      const { id, ...data } = entry;
+      const { id, synced, ...data } = entry;
+      // Round 'paid' amount before saving to Firestore
+      const roundedPaid = Math.ceil(data.paid);
       chunkBatch.set(docRef, { 
         ...data, 
+        paid: roundedPaid,
         timestamp: new Date(entry.datetime).getTime(),
         migrated: true 
       });

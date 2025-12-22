@@ -27,9 +27,33 @@
       background: #94a3b8; 
     }
     @media print {
+      @page {
+        margin: 0.5cm;
+        size: auto;
+      }
+      body {
+        background-color: white;
+        font-size: 9pt;
+        color: black;
+      }
       .no-print { display: none !important; }
       .print-only { display: block !important; }
-      body { background-color: white; }
+      
+      /* Remove all shadows and forced borders for print */
+      .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
+        box-shadow: none !important;
+      }
+      
+      /* Ensure colors are printed clearly */
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      /* Compact table rows for print */
+      tr {
+        break-inside: avoid;
+      }
     }
   </style>
 <script type="importmap">
