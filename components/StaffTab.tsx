@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Trash2, UserPlus, ShieldAlert, Calendar, Users, Scissors } from 'lucide-react';
 import { Button, Input, Card, Modal } from './UI';

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Trash2, Upload, Plus, User, UserRoundSearch } from 'lucide-react';
 import { Button, Input, Card } from './UI';

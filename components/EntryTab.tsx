@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Crown, AlertCircle, Cloud, CloudUpload, Search, Check, ChevronDown, Edit3, Users, User, UserRound, UserRoundSearch, OctagonAlert, RefreshCw, FileText, Download, Printer, Scissors, Calendar, Eye, X, Banknote } from 'lucide-react';
+import { Plus, Trash2, Crown, AlertCircle, Cloud, CloudUpload, Search, Check, ChevronDown, Edit3, Users, User, UserRound, UserRoundSearch, OctagonAlert, RefreshCw, FileText, Download, Printer, Scissors, Calendar, Eye, X, Banknote, CreditCard } from 'lucide-react';
 import { Button, Input, Select, Card, Modal } from './UI';
 import { Entry, Service, ServiceItem, VIPMember } from '../types';
 import { calculateVIPStatus, formatCurrency, getTodayISO, formatDateDisplay } from '../services/utils';
@@ -12,6 +11,7 @@ interface EntryTabProps {
   entries: Entry[];
   onSave: (entry: Entry) => void;
   onAddVIP: (vip: VIPMember) => void;
+  onDeleteEntry: (id: string | number) => void;
   counterCash?: number;
   onUpdateCounterCash?: (val: number) => void;
 }
@@ -55,21 +55,21 @@ const SearchableSelect = ({
         className="w-full px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-800 cursor-pointer flex justify-between items-center focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-500"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span className={value ? "text-slate-800" : "text-slate-400"}>
+        <span className={value ? "text-slate-800 font-bold" : "text-slate-400"}>
           {value || placeholder}
         </span>
         <ChevronDown size={16} className="text-slate-400" />
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-60 flex flex-col">
-            <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0">
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-60 flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-2 border-b border-slate-100 bg-white sticky top-0">
                 <div className="relative">
                     <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
                     <input 
                         autoFocus
                         type="text"
-                        className="w-full pl-9 pr-3 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:border-sky-400"
+                        className="w-full pl-9 pr-3 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:border-sky-400 bg-white text-slate-900"
                         placeholder="Search..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -102,14 +102,14 @@ const SearchableSelect = ({
   );
 };
 
-export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entries, onSave, onAddVIP, counterCash = 0, onUpdateCounterCash }) => {
+export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entries, onSave, onAddVIP, onDeleteEntry, counterCash = 0, onUpdateCounterCash }) => {
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [selectedStaff, setSelectedStaff] = useState('');
   const [date, setDate] = useState(getTodayISO());
   const [serviceRows, setServiceRows] = useState<ServiceItem[]>([{ name: '', amount: 0, category: 'Men' }]);
   const [manualDiscount, setManualDiscount] = useState<number>(0);
-  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [paymentMethod, setPaymentMethod] = useState('UPI'); // UPI as default
   const [isEditingTotal, setIsEditingTotal] = useState(false);
   const [tempTotal, setTempTotal] = useState('');
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
@@ -125,15 +125,17 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
     return vips.filter(v => v.phone.includes(phone)).slice(0, 5);
   }, [phone, vips]);
 
+  // Fix: Replaced 'setIsOpen' with 'setShowPhoneSuggestions' to correctly handle click-outside for phone suggestions.
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (phoneWrapperRef.current && !phoneWrapperRef.current.contains(event.target as Node)) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
         setShowPhoneSuggestions(false);
       }
     }
+    const wrapperRef = phoneWrapperRef; // Ref to capture
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [phoneWrapperRef]);
+  }, []);
 
   useEffect(() => {
     if (phone.length > 3) {
@@ -203,18 +205,20 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
   const calculation = useMemo(() => {
     let subtotal = 0;
     let vipSavings = 0;
+    const isBecomingVIP = serviceRows.some(s => s.name === 'VIP Membership Fee');
+    const effectivelyVIP = vipStatus === 'active' || isBecomingVIP;
 
     serviceRows.forEach(item => {
         const amt = item.amount || 0;
         subtotal += amt;
         
-        if (vipStatus === 'active' && amt > 100 && item.name !== 'VIP Membership Fee') {
+        if (effectivelyVIP && amt > 100 && item.name !== 'VIP Membership Fee') {
             vipSavings += amt * 0.20;
         }
     });
 
     let finalDiscountAmount = 0;
-    if (vipStatus === 'active') {
+    if (effectivelyVIP) {
         finalDiscountAmount = vipSavings;
     } else {
         finalDiscountAmount = subtotal * (manualDiscount / 100);
@@ -223,7 +227,7 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
     const totalPaidRaw = Math.max(0, subtotal - finalDiscountAmount);
     const totalPaid = Math.ceil(totalPaidRaw);
     
-    return { subtotal, finalDiscountAmount, totalPaid };
+    return { subtotal, finalDiscountAmount, totalPaid, isBecomingVIP };
   }, [serviceRows, vipStatus, manualDiscount]);
 
   const handleTotalBlur = () => {
@@ -233,6 +237,8 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
     targetVal = Math.ceil(targetVal); 
     
     const currentCalculation = calculation;
+    const effectivelyVIP = vipStatus === 'active' || currentCalculation.isBecomingVIP;
+
     if (Math.abs(currentCalculation.totalPaid - targetVal) < 0.1) return;
 
     const validRows = serviceRows.filter(s => s.name);
@@ -240,7 +246,7 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
 
     const getRate = (item: ServiceItem) => {
         if (item.name === 'VIP Membership Fee') return 1.0; 
-        if (vipStatus === 'active') return item.amount > 100 ? 0.8 : 1.0;
+        if (effectivelyVIP) return item.amount > 100 ? 0.8 : 1.0;
         const r = 1 - (manualDiscount / 100);
         return Math.max(0.0001, r);
     };
@@ -256,11 +262,10 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
         const targetPaidItem = currentPaid - paidDiffPerItem;
         let newAmount = targetPaidItem / currentRate;
         
-        if (vipStatus === 'active' && s.name !== 'VIP Membership Fee') {
+        if (effectivelyVIP && s.name !== 'VIP Membership Fee') {
             if (s.amount > 100 && newAmount <= 100) newAmount = targetPaidItem; 
             else if (s.amount <= 100 && newAmount > 100) newAmount = targetPaidItem / 0.8;
         }
-        // User requested rounding off in services (removing points)
         return { ...s, amount: Math.ceil(Math.max(0, newAmount)) };
     });
 
@@ -271,12 +276,12 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
           if (!item.name) return;
           const amt = item.amount || 0;
           sub += amt;
-          if (vipStatus === 'active' && amt > 100 && item.name !== 'VIP Membership Fee') {
+          if (effectivelyVIP && amt > 100 && item.name !== 'VIP Membership Fee') {
               savings += amt * 0.20;
           }
       });
       let disc = 0;
-      if (vipStatus === 'active') disc = savings;
+      if (effectivelyVIP) disc = savings;
       else disc = sub * (manualDiscount / 100);
       return Math.ceil(Math.max(0, sub - disc));
     };
@@ -284,7 +289,6 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
     let attempts = 0;
     const firstIdx = newRows.findIndex(r => r.name);
     if (firstIdx !== -1) {
-        // Adjustment loop to ensure totalPaid is exactly targetVal after rounding services
         while (attempts < 500) {
             const currentTotal = calculateCurrentTotalPaid(newRows);
             if (currentTotal === targetVal) break;
@@ -312,6 +316,16 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
       return;
     }
 
+    if (calculation.isBecomingVIP) {
+      const newVip: VIPMember = {
+        phone,
+        name,
+        date: getTodayISO(),
+        staff: selectedStaff || 'Unknown'
+      };
+      onAddVIP(newVip);
+    }
+
     const newEntry: Entry = {
       id: '', 
       date,
@@ -323,7 +337,7 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
       total: calculation.subtotal,
       discount: calculation.subtotal > 0 ? Number(((calculation.finalDiscountAmount / calculation.subtotal) * 100).toFixed(2)) : 0,
       paid: calculation.totalPaid,
-      memberStatus: vipStatus,
+      memberStatus: vipStatus === 'active' || calculation.isBecomingVIP ? 'active' : (vipStatus === 'expired' ? 'expired' : 'normal'),
       paymentMethod: paymentMethod 
     };
 
@@ -334,26 +348,24 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
     setDate(getTodayISO());
     setServiceRows([{ name: '', amount: 0, category: 'Men' }]);
     setManualDiscount(0);
-    setPaymentMethod('Cash');
+    setPaymentMethod('UPI');
     setShowPhoneSuggestions(false);
   };
 
   const handleQuickAddVIP = () => {
     if (!phone || !name) return alert("Enter name and phone first");
-    const newVip: VIPMember = {
-      phone,
-      name,
-      date: getTodayISO(),
-      staff: selectedStaff || 'Unknown'
-    };
-    onAddVIP(newVip);
-    
     setServiceRows(prev => {
         const filtered = prev.filter(s => s.name);
         const membershipRow = { name: 'VIP Membership Fee', amount: 200, category: 'Men' as const };
         if (filtered.some(s => s.name === 'VIP Membership Fee')) return prev;
         return [membershipRow, ...filtered, { name: '', amount: 0, category: 'Men' as const }];
     });
+  };
+
+  const handleDeleteEntry = (id: string | number) => {
+    if (confirm("Are you sure you want to delete this transaction? This action cannot be undone.")) {
+      onDeleteEntry(id);
+    }
   };
 
   const todaysEntries = useMemo(() => 
@@ -373,9 +385,12 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
         acc.membershipTotal += (hasFee ? 200 : 0);
         if (e.paymentMethod === 'Cash') {
           acc.cashTotal += e.paid;
+          acc.cashSrvTotal += srvPaid;
+        } else if (e.paymentMethod === 'UPI' || e.paymentMethod === 'Card') {
+          acc.upiCardServiceTotal += srvPaid;
         }
         return acc;
-    }, { serviceTotal: 0, grandTotal: 0, cashTotal: 0, membershipTotal: 0 });
+    }, { serviceTotal: 0, grandTotal: 0, cashTotal: 0, membershipTotal: 0, upiCardServiceTotal: 0, cashSrvTotal: 0 });
   }, [todaysEntries]);
 
   const handleViewDailyReport = () => {
@@ -383,89 +398,10 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
     setIsPreviewModalOpen(true);
   };
 
-  const handlePrintDaily = () => {
-    window.print();
-  };
+  const effectivelyVIPNow = vipStatus === 'active' || calculation.isBecomingVIP;
 
   return (
     <div className="space-y-6">
-      {/* Hidden Print Section */}
-      <div className="hidden print:block fixed inset-0 bg-white z-[9999] overflow-y-auto">
-        <div className="p-4">
-            <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-6">
-                <div>
-                    <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-                        <Scissors className="text-sky-600" size={24} /> Salon Daily Transaction Report
-                    </h1>
-                    <div className="flex items-center gap-4 mt-1 text-slate-500 font-bold uppercase text-[10px]">
-                        <span className="flex items-center gap-1"><Calendar size={12}/> {formatDateDisplay(getTodayISO())}</span>
-                        <span>Generated on: {new Date().toLocaleTimeString()}</span>
-                    </div>
-                </div>
-                <div className="text-right">
-                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Service Revenue</div>
-                    <div className="text-2xl font-black text-teal-600">{formatCurrency(todaysStats.serviceTotal)}</div>
-                </div>
-            </div>
-
-            <table className="w-full text-left text-[10pt] border-collapse">
-                <thead className="bg-slate-50 border-y border-slate-200">
-                    <tr>
-                        <th className="p-2">Time</th>
-                        <th className="p-2">Client</th>
-                        <th className="p-2">Services</th>
-                        <th className="p-2">Staff</th>
-                        <th className="p-2">Mode</th>
-                        <th className="p-2 text-right">Service Paid</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                    {todaysEntries.map((e, idx) => {
-                        const hasFee = e.services.some(s => s.name === 'VIP Membership Fee');
-                        const srvPaid = Math.ceil(e.paid - (hasFee ? 200 : 0));
-                        return (
-                            <tr key={idx}>
-                                <td className="p-2 text-slate-500 whitespace-nowrap">
-                                    {new Date(e.datetime).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
-                                </td>
-                                <td className="p-2">
-                                    <div className="font-bold">{e.name}</div>
-                                    <div className="text-[8pt] text-slate-400">{e.phone}</div>
-                                </td>
-                                <td className="p-2">
-                                    <div className="flex flex-wrap gap-1">
-                                        {e.services.map((s, i) => (
-                                            <span key={i} className="text-[8pt] px-1 border border-slate-100 rounded bg-slate-50">
-                                                {s.name}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </td>
-                                <td className="p-2 text-slate-600">{e.staff}</td>
-                                <td className="p-2 text-slate-500">{e.paymentMethod}</td>
-                                <td className="p-2 text-right font-bold text-slate-800">{formatCurrency(srvPaid)}</td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
-                <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-bold">
-                    <tr>
-                        <td colSpan={5} className="p-3 text-right text-slate-600">Daily Service Total</td>
-                        <td className="p-3 text-right text-teal-700 text-lg">{formatCurrency(todaysStats.serviceTotal)}</td>
-                    </tr>
-                    <tr className="bg-white border-t border-slate-100">
-                        <td colSpan={5} className="p-2 text-right text-slate-400 text-[8pt]">Grand Total (incl. Memberships)</td>
-                        <td className="p-2 text-right text-slate-500">{formatCurrency(todaysStats.grandTotal)}</td>
-                    </tr>
-                </tfoot>
-            </table>
-            
-            <div className="mt-12 text-center text-[8pt] text-slate-400 font-medium">
-                --- End of Report ---
-            </div>
-        </div>
-      </div>
-
       <Modal
         isOpen={isPreviewModalOpen}
         onClose={() => setIsPreviewModalOpen(false)}
@@ -474,14 +410,14 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
         footer={
             <div className="flex justify-between w-full">
                 <Button variant="ghost" onClick={() => setIsPreviewModalOpen(false)}>Close Preview</Button>
-                <Button onClick={handlePrintDaily}>
+                <Button onClick={() => window.print()}>
                     <Printer size={18} className="mr-2" /> Print / Save PDF
                 </Button>
             </div>
         }
       >
         <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 sticky top-0 z-10 bg-white pb-2">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3 sticky top-0 z-10 bg-white pb-2">
                 <div className="bg-white p-3 rounded-xl border-t-4 border-t-slate-400 border border-slate-200 shadow-sm flex flex-col justify-center">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Report Date</p>
                     <p className="text-sm font-black text-slate-800">{formatDateDisplay(getTodayISO())}</p>
@@ -505,7 +441,14 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                         <Banknote size={14} className="text-amber-500" />
                         <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600">Entries Cash</p>
                     </div>
-                    <p className="text-xl font-black text-slate-800">{formatCurrency(todaysStats.cashTotal)}</p>
+                    <p className="text-xl font-black text-slate-800">{formatCurrency(todaysStats.cashSrvTotal)}</p>
+                </div>
+                <div className="bg-white p-3 rounded-xl border-t-4 border-t-indigo-500 border border-slate-200 shadow-sm flex flex-col justify-center">
+                    <div className="flex items-center gap-1.5 mb-1">
+                        <CreditCard size={14} className="text-indigo-500" />
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">UPI + Card Srv</p>
+                    </div>
+                    <p className="text-xl font-black text-slate-800">{formatCurrency(todaysStats.upiCardServiceTotal)}</p>
                 </div>
                 <div className="bg-white p-3 rounded-xl border-t-4 border-t-orange-500 border border-slate-200 shadow-sm flex flex-col justify-center">
                     <div className="flex items-center gap-1.5 mb-1">
@@ -520,11 +463,12 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
               <table className="w-full text-sm text-left border-collapse">
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px]">
                   <tr>
-                    <th className="p-3 w-40">Client Name</th>
-                    <th className="p-3 w-32">Phone Number</th>
-                    <th className="p-3">Services</th>
-                    <th className="p-3 w-24">Method</th>
-                    <th className="p-3 text-right w-32">Amount Paid</th>
+                    <th className="p-3 w-32 whitespace-nowrap">Client Name</th>
+                    <th className="p-3 w-28 whitespace-nowrap">Phone Number</th>
+                    <th className="p-3 whitespace-nowrap">Services</th>
+                    <th className="p-3 w-24 text-center whitespace-nowrap">Staff</th>
+                    <th className="p-3 w-24 whitespace-nowrap">Method</th>
+                    <th className="p-3 text-right w-32 whitespace-nowrap">Amount Paid</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -533,7 +477,7 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                       const srvPaid = Math.ceil(e.paid - (hasFee ? 200 : 0));
                       return (
                           <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                              <td className="p-3 font-bold text-slate-800 align-top">
+                              <td className="p-3 font-bold text-black align-top">
                                   {e.name}
                               </td>
                               <td className="p-3 text-slate-500 align-top font-medium">
@@ -548,8 +492,11 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                                       ))}
                                   </div>
                               </td>
+                              <td className="p-3 align-top text-center text-slate-600 font-bold">
+                                  {e.staff}
+                              </td>
                               <td className="p-3 align-top">
-                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-tight ${e.paymentMethod === 'Cash' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-sky-50 text-sky-700 border border-sky-100'}`}>
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-tight ${e.paymentMethod === 'Cash' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-sky-50 text-sky-700 border-sky-100'}`}>
                                       {e.paymentMethod}
                                   </span>
                               </td>
@@ -562,10 +509,6 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                 </tbody>
               </table>
             </div>
-            
-            <p className="text-[10px] text-slate-400 italic text-center">
-                Note: 'Amount Paid' column reflects only service revenue (excludes membership fees where applicable).
-            </p>
         </div>
       </Modal>
 
@@ -579,12 +522,12 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
               onFocus={() => setShowPhoneSuggestions(true)}
               placeholder="98765..." 
             />
-            {vipStatus === 'active' && (
+            {effectivelyVIPNow && (
               <span className="absolute top-0 right-0 mt-1 mr-1 text-xs font-bold text-teal-600 flex items-center gap-1">
-                <Crown size={12} /> VIP Member
+                <Crown size={12} /> {calculation.isBecomingVIP && !existingVip ? 'New VIP' : 'VIP Member'}
               </span>
             )}
-            {vipStatus === 'expired' && (
+            {vipStatus === 'expired' && !calculation.isBecomingVIP && (
               <span className="absolute top-0 right-0 mt-1 mr-1 text-xs font-bold text-rose-600 flex items-center gap-1 animate-pulse">
                 <OctagonAlert size={12} /> VIP Expired
               </span>
@@ -682,7 +625,7 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                                 readOnly={row.name === 'VIP Membership Fee'}
                                 onChange={e => handleAmountChange(index, parseFloat(e.target.value))}
                                 placeholder="0.00"
-                                className={row.name === 'VIP Membership Fee' ? 'bg-slate-50 font-bold' : ''}
+                                className={row.name === 'VIP Membership Fee' ? 'bg-slate-50 font-bold text-sky-700' : ''}
                             />
                         </div>
                         <button 
@@ -698,7 +641,7 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end border-t border-slate-100 pt-6">
            <div className="flex gap-4">
-             {phone.length >= 10 && name.trim().length > 0 && vipStatus !== 'active' && (
+             {phone.length >= 10 && name.trim().length > 0 && !effectivelyVIPNow && (
                  <Button 
                     variant="secondary" 
                     onClick={handleQuickAddVIP} 
@@ -718,7 +661,7 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                 <span className="font-semibold">{formatCurrency(calculation.subtotal)}</span>
              </div>
              
-             {vipStatus !== 'active' ? (
+             {!effectivelyVIPNow ? (
                 <div className="flex items-center justify-between gap-4">
                     <label className="text-sm font-medium text-slate-600">Manual Discount (%)</label>
                     <Input 
@@ -730,7 +673,10 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                 </div>
              ) : (
                 <div className="flex items-center justify-between text-teal-600 bg-teal-50 px-3 py-2 rounded-lg text-sm">
-                    <span className="flex items-center gap-2"><Crown size={14}/> VIP Savings (20% off)</span>
+                    <span className="flex items-center gap-2">
+                        <Crown size={14}/> 
+                        {calculation.isBecomingVIP ? 'New VIP Savings (20% on services)' : 'VIP Savings (20% off)'}
+                    </span>
                     <span className="font-bold">-{formatCurrency(calculation.finalDiscountAmount)}</span>
                 </div>
              )}
@@ -763,16 +709,24 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                 )}
              </div>
 
-             <div className="flex items-center justify-between gap-4">
-                <label className="text-sm font-medium text-slate-600 whitespace-nowrap">Payment Method</label>
-                <Select 
-                    value={paymentMethod}
-                    onChange={e => setPaymentMethod(e.target.value)}
-                >
-                    <option value="Cash">Cash</option>
-                    <option value="UPI">UPI</option>
-                    <option value="Card">Card</option>
-                </Select>
+             <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-600 whitespace-nowrap block">Payment Method</label>
+                <div className="grid grid-cols-3 gap-2">
+                    {['UPI', 'Cash', 'Card'].map(method => (
+                        <button
+                            key={method}
+                            type="button"
+                            onClick={() => setPaymentMethod(method)}
+                            className={`py-3 px-4 rounded-xl border-2 font-bold text-sm transition-all duration-200 ${
+                                paymentMethod === method 
+                                ? 'bg-sky-50 border-sky-500 text-sky-700 shadow-sm translate-y-[-1px]' 
+                                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                            }`}
+                        >
+                            {method}
+                        </button>
+                    ))}
+                </div>
              </div>
 
              <Button onClick={handleSave} className="w-full" disabled={!phone || !name || !selectedStaff}>
@@ -798,7 +752,7 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                     />
                 </div>
                 <Button size="sm" variant="secondary" onClick={handleViewDailyReport} className="h-10 border-sky-400 text-sky-600 hover:bg-sky-50 px-4">
-                    <Eye size={16} className="mr-2" /> View Report
+                    <Eye size={16} className="mr-2 text-black" /> View Report
                 </Button>
             </div>
         </div>
@@ -807,16 +761,17 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
             <p className="p-8 text-slate-400 text-sm italic text-center">No entries yet today.</p>
         ) : (
             <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 text-slate-600">
+                <table className="w-full text-sm text-left border-collapse">
+                    <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] font-black tracking-wider">
                         <tr>
-                            <th className="p-3">Time</th>
-                            <th className="p-3">Client</th>
-                            <th className="p-3">Services</th>
-                            <th className="p-3">Staff</th>
-                            <th className="p-3">Method</th>
-                            <th className="p-3 text-right">Service Amount</th>
-                            <th className="p-3 w-10">Sync</th>
+                            <th className="p-3 w-20 whitespace-nowrap">Time</th>
+                            <th className="p-3 w-32 whitespace-nowrap">Client Name</th>
+                            <th className="p-3 w-24 whitespace-nowrap">Phone</th>
+                            <th className="p-3 whitespace-nowrap">Services Performed</th>
+                            <th className="p-3 w-24 whitespace-nowrap text-center">Staff</th>
+                            <th className="p-3 w-16 whitespace-nowrap text-center">Method</th>
+                            <th className="p-3 text-right w-24 whitespace-nowrap">Amount</th>
+                            <th className="p-3 text-center w-12 whitespace-nowrap">Action</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -826,61 +781,44 @@ export const EntryTab: React.FC<EntryTabProps> = ({ services, staff, vips, entri
                             
                             return (
                                 <tr key={entry.id} className="last:border-0 hover:bg-slate-50 transition-colors">
-                                    <td className="p-3 text-slate-500">
+                                    <td className="p-3 text-slate-500 whitespace-nowrap text-[11px] font-medium">
                                         {new Date(entry.datetime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                     </td>
-                                    <td className="p-3 font-medium">
-                                        {entry.name} <br/>
-                                        <span className="text-xs text-slate-400 font-normal">{entry.phone}</span>
+                                    <td className="p-3 font-bold text-slate-800 truncate">
+                                        {entry.name}
+                                    </td>
+                                    <td className="p-3 text-slate-900 font-black whitespace-nowrap tracking-tight text-xs">
+                                        {entry.phone}
                                     </td>
                                     <td className="p-3 text-slate-600">
                                         <div className="flex flex-wrap gap-1">
                                             {entry.services.map((s, idx) => (
-                                                <span key={idx} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${s.category === 'Men' ? 'bg-sky-50 text-sky-600 border border-sky-100' : s.category === 'Women' ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-slate-100 text-slate-600'}`}>
+                                                <span key={idx} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${s.category === 'Men' ? 'bg-sky-50 text-sky-600 border border-sky-100' : s.category === 'Women' ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-slate-100 text-slate-600'}`}>
                                                     {s.name}
                                                 </span>
                                             ))}
                                         </div>
                                     </td>
-                                    <td className="p-3 text-slate-600 font-medium">{entry.staff}</td>
-                                    <td className="p-3 text-slate-600 text-xs">
-                                        <span className="px-2 py-1 bg-slate-100 rounded-md border border-slate-200 font-bold text-slate-500 uppercase">
+                                    <td className="p-3 text-slate-600 font-bold text-center text-xs whitespace-nowrap">{entry.staff}</td>
+                                    <td className="p-3 text-slate-600 text-center">
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] border font-black uppercase ${entry.paymentMethod === 'Cash' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-sky-50 text-sky-700 border-sky-100'}`}>
                                             {entry.paymentMethod || 'Cash'}
                                         </span>
                                     </td>
-                                    <td className="p-3 text-right font-bold text-slate-700">{formatCurrency(serviceOnlyPaid)}</td>
-                                    <td className="p-3 flex justify-center text-slate-400">
-                                        {entry.synced ? (
-                                            <span title="Synced to Cloud">
-                                                <Cloud size={16} className="text-teal-500" />
-                                            </span>
-                                        ) : (
-                                            <span title="Pending Sync">
-                                                <CloudUpload size={16} className="text-orange-400 animate-pulse" />
-                                            </span>
-                                        )}
+                                    <td className="p-3 text-right font-black text-slate-800 whitespace-nowrap text-xs">{formatCurrency(serviceOnlyPaid)}</td>
+                                    <td className="p-3 text-center">
+                                      <button 
+                                          onClick={() => handleDeleteEntry(entry.id)} 
+                                          className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                                          title="Delete Entry"
+                                      >
+                                          <Trash2 size={16} />
+                                      </button>
                                     </td>
                                 </tr>
                             );
                         })}
                     </tbody>
-                    <tfoot className="bg-slate-50 font-bold border-t border-slate-200">
-                        <tr>
-                            <td colSpan={5} className="p-4 text-right text-slate-600 uppercase tracking-wider text-[10px]">Today's Daily Summary</td>
-                            <td className="p-4 text-right">
-                                <div className="flex flex-col">
-                                    <span className="text-teal-700 text-base font-black">{formatCurrency(todaysStats.serviceTotal)}</span>
-                                    <span className="text-[10px] text-slate-400 font-normal uppercase">Service Only</span>
-                                </div>
-                            </td>
-                            <td></td>
-                        </tr>
-                        <tr className="bg-white border-t border-slate-100">
-                            <td colSpan={5} className="p-2 text-right text-slate-400 text-[10px] uppercase font-bold tracking-widest">Grand Total (incl. Memberships)</td>
-                            <td className="p-2 text-right text-slate-500">{formatCurrency(todaysStats.grandTotal)}</td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
                 </table>
             </div>
         )}

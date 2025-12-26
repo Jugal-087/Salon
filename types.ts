@@ -1,4 +1,3 @@
-
 export interface Service {
   name: string;
   amount: number;

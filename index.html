@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Salon Offline Manager</title>
+  <title>Salon Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -26,6 +26,15 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #94a3b8; 
     }
+
+    /* Make date/time picker symbols black and visible */
+    input[type="date"]::-webkit-calendar-picker-indicator,
+    input[type="time"]::-webkit-calendar-picker-indicator {
+      cursor: pointer;
+      filter: invert(0) brightness(0); /* Force absolute black */
+      opacity: 1;
+    }
+
     @media print {
       @page {
         margin: 0.5cm;
